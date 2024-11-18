@@ -1,0 +1,162 @@
+# WEEK 10 - INFERENCE FOR REGRESSION
+library(tidyverse)
+library(moderndive)
+library(infer)
+
+# Remember what we did with teacher evaluations?
+evals_mini <- evals %>%
+  select(ID, score, bty_avg, age)
+glimpse(evals_mini)
+
+# And plot it
+ggplot(evals_mini, aes(x = bty_avg, y = score)) +
+  geom_point(alpha = 0.1) +
+  labs(x = "Beauty Score", 
+       y = "Teaching Score",
+       title = "Relationship between teaching and beauty scores") +  
+  geom_smooth(method = "lm")
+
+# Seen another way- fitting a linear model
+# Fit regression model:
+score_model <- lm(score ~ bty_avg, data = evals_mini)
+# Get regression table:
+get_regression_table(score_model)
+
+# Real quick: what does this mean? Let's practice interpreting the coefficients
+
+# How does all this fit into the sampling framework we've been exploring?
+
+# OK, let's go back to the regression table.
+get_regression_table(score_model)
+
+# What does standard error mean? A thought experiment
+# What does the p-value mean?
+# What does the confidence interval mean?
+
+# standard error, p val, and confidence interval displayed in this regression output comes from theoretical calculation based off SD, mean, sample size, assumptions of 
+
+# Putting it together.... do you see how this gives us some info 
+# that's relevant to a hypothesis test?
+
+
+##############################
+## CONDITIONS FOR INFERENCE ##
+##############################
+# How do we know these estimates in the regression table are any good? 
+# A few assumptions must be met!
+
+# Remember: L.I.N.E.
+
+# L is for linear
+#https://moderndive.com/10-inference-for-regression.html#linearity-of-relationship
+
+# I is for independent
+# Do you think this is met?
+evals %>% 
+  select(ID, prof_ID, score, bty_avg)
+
+# N is for normality of residuals
+### Check out the residuals:
+# Fit regression model:
+score_model <- lm(score ~ bty_avg, data = evals_mini)
+# Get regression points:
+regression_points <- get_regression_points(score_model)
+regression_points
+
+# Plot them!
+ggplot(regression_points, aes(x = residual)) +
+  geom_histogram(binwidth = 0.25, color = "white") +
+  labs(x = "Residual")
+
+# Let's look at some examples of normal and not-normal residuals
+# https://moderndive.com/10-inference-for-regression.html#normality-of-residuals
+
+# E is for equal variance
+# Let's visualize beauty score vs. residual
+ggplot(regression_points, aes(x = bty_avg, y = residual)) +
+  geom_point() +
+  labs(x = "Beauty Score", y = "Residual") +
+  geom_hline(yintercept = 0, col = "blue", size = 1)
+
+# And for comparison- what does it look like when "equal variance"
+# doesn't hold?
+# https://moderndive.com/10-inference-for-regression.html#normality-of-residuals
+
+
+# Put it all together- L.I.N.E.! Did we meet them all?
+
+##############################################
+## Let's run a simulation-based inference ####
+##############################################
+# What is the confidence interval for the slope relating beauty score 
+# to teaching evaluation score?
+# 
+bootstrap_distn_slope <- evals_mini %>%
+  specify(formula = score ~ bty_avg) %>%
+  generate(reps = 1000, type = "bootstrap") %>% 
+  calculate(stat = "slope")
+
+# View it!
+visualize(bootstrap_distn_slope)
+
+# Calculate the 95% CI with the percentile method
+percentile_ci <- bootstrap_distn_slope %>% 
+  get_confidence_interval(type = "percentile", level = 0.95)
+percentile_ci
+
+# Now do it with the standard error method
+observed_slope <- evals %>% 
+  specify(score ~ bty_avg) %>% 
+  calculate(stat = "slope")
+observed_slope
+
+se_ci <- bootstrap_distn_slope %>% 
+  get_ci(level = 0.95, type = "se", point_estimate = observed_slope)
+se_ci
+
+# Compare all 3 ways we've calculated the standard error
+visualize(bootstrap_distn_slope) + 
+  shade_confidence_interval(endpoints = percentile_ci,  
+                            linetype = "solid", color = "grey90")+
+  theme_bw() + 
+  shade_confidence_interval(endpoints = se_ci, fill = NULL, 
+                            linetype = "dashed", color = "grey60") +
+  shade_confidence_interval(endpoints = c(0.035, 0.099), fill = NULL, 
+                            linetype = "dotted", color = "black")
+
+# What does this mean? Saying it in plain language (as plain as I can figure out, anyway!)
+
+# This gives us a plausible range for the real slope in the population. 
+
+#############################
+##### A HYPOTHESIS TEST #####
+#############################
+# What exactly does a hypothesis test ask?
+# Null: the slope is zero
+# Alternative: the slope is not zero.
+
+# Put it in even plainer language
+
+# Let's create a hypothesized universe where there's NO relationship between
+# beauty score and teaching evaluations. SHUFFLE!!!!
+null_distn_slope <- evals %>% 
+  specify(score ~ bty_avg) %>%
+  hypothesize(null = "independence") %>% 
+  generate(reps = 1000, type = "permute") %>% 
+  calculate(stat = "slope")
+
+visualize(null_distn_slope)
+
+# Let's calculate a p-value for our OBSERVED slope
+null_distn_slope %>% 
+  get_p_value(obs_stat = observed_slope, direction = "both")
+
+# And plot it
+visualize(null_distn_slope) +
+  shade_p_value(obs_stat = observed_slope, direction = "both")
+
+# What would you conclude from this?
+
+#######
+# Are you starting to see some patterns in how we test hypotheses? 
+# https://moderndive.com/9-hypothesis-testing.html#only-one-test
